@@ -1,0 +1,241 @@
+---
+title: "The Importance of Normality Assumption in Large Public Health Data Sets"
+output: html_notebook
+---
+
+Data Exploration
+```{r include=FALSE}
+library(moments)
+library(tidyverse)
+library(lmtest)
+library(car)
+```
+```{r}
+data <- read.table("~/Desktop/SASUniversityEdition/FL_insurance_sample 2.csv", header=TRUE, sep=",")
+head(data)
+dim(data)
+hist(data$tiv_2012, xlim=c(0, 1.5e+07), breaks=1000)
+skewness(data$tiv_2012)
+kurtosis(data$tiv_2012)
+summary(data$tiv_2012)
+```
+Example of Central Limit Theorem:
+
+Sampling distribution of 1000 means of random samples of size 1%, 2%, 5%, 7.5%, 10%, 15%, and 20% of the population from this very non-Normal distribution. 
+```{r}
+sampler <- function(dat, pct) {
+  ans_vec <- rep(0,times=1000)
+  for(i in 1:1000) {
+    ans_ <- sample(dat, size=pct*36634)
+    ans_vec[i] <- mean(ans_)
+  }
+  return(ans_vec)
+}
+
+set.seed(1234567890)
+
+par(mfrow=c(2,3))
+
+# s_1 <- sampler(dat=data$tiv_2012, pct=0.01)
+# skewness(s_1)
+# hist(s_1, xlim=c(7e+05,6.5e+06), main="1%", xlab="Dollars", breaks=44, freq=FALSE)
+# x <- seq(7e+05,6.5e+06)
+# curve(dnorm(x, mean=mean(s_1), sd=sd(s_1)), add=TRUE)
+# abline(v=mean(s_1), col="red", lty=1, lwd=2)
+
+s_2 <- sampler(dat=data$tiv_2012,pct=0.02)
+skewness(s_2)
+hist(s_2, xlim=c(7e+05,6.5e+06), main="2%", xlab="Dollars",breaks=44, freq=FALSE)
+curve(dnorm(x, mean=mean(s_2), sd=sd(s_2)), add=TRUE)
+abline(v=mean(s_2), col="red", lty=1, lwd=2)
+
+s_5 <- sampler(dat=data$tiv_2012, pct=0.05)
+skewness(s_5)
+hist(s_5, xlim=c(7e+05,6.5e+06), main="5%", xlab="Dollars", breaks=11, freq=FALSE)
+curve(dnorm(x, mean=mean(s_5), sd=sd(s_5)), add=TRUE)
+abline(v=mean(s_5), col="red", lty=1, lwd=2)
+
+s_7_5 <- sampler(dat=data$tiv_2012, pct=0.075)
+skewness(s_7_5)
+hist(s_7_5, xlim=c(7e+05,6.5e+06), main="7.5%", xlab="Dollars", breaks=11, freq=FALSE)
+curve(dnorm(x, mean=mean(s_7_5), sd=sd(s_7_5)), add=TRUE)
+abline(v=mean(s_7_5), col="red", lty=1, lwd=2)
+
+s_10 <- sampler(dat=data$tiv_2012, pct=0.1)
+skewness(s_10)
+hist(s_10, xlim=c(7e+05,6.5e+06), main="10%", xlab="Dollars", breaks=11, freq=FALSE)
+curve(dnorm(x, mean=mean(s_10), sd=sd(s_10)), add=TRUE)
+abline(v=mean(s_10), col="red", lty=1, lwd=2)
+
+s_15 <- sampler(dat=data$tiv_2012, pct=0.15)
+skewness(s_15)
+hist(s_15, xlim=c(7e+05,6.5e+06), main="15%", xlab="Dollars", breaks=11, freq=FALSE)
+curve(dnorm(x, mean=mean(s_15), sd=sd(s_15)), add=TRUE)
+abline(v=mean(s_15), col="red", lty=1, lwd=2)
+
+s_20 <- sampler(dat=data$tiv_2012, pct=0.20)
+skewness(s_20)
+hist(s_20, xlim=c(7e+05,6.5e+06), main="20%", xlab="Dollars", breaks=11, freq=FALSE)
+curve(dnorm(x, mean=mean(s_20), sd=sd(s_20)), add=TRUE)
+abline(v=mean(s_20), col="red", lty=1, lwd=2)
+
+```
+We drew 1000 1% samples, of average size 65, from the population. For each sample we calculated the regression of cost on age, sex, self-rated health, and HMO (IPA = 0) versus Fee for Service (IPA = 1). % of population, N in sample, Mean
+```{r}
+coeff_cmp <- function(pop_coeff, smp_confint) {
+  
+  tiv12 <- pop_coeff[2]; rc <- pop_coeff[3]; rm <- pop_coeff[4]; sf <- pop_coeff[5]; #wd <- pop_coeff[6]
+  pct_tiv12 <- rep(0,1000); pct_rc <- rep(0,1000); pct_rm <- rep(0,1000); pct_sf <- rep(0,1000); #pct_wd <- rep(0,1000)
+  
+  for(i in 1:1000) {
+    s_tiv12 <- c(smp_confint[[i]][2,1], smp_confint[[i]][2,2])
+    s_rc <- c(smp_confint[[i]][3,1], smp_confint[[i]][3,2])
+    s_rm <- c(smp_confint[[i]][4,1], smp_confint[[i]][4,2])
+    s_sf <- c(smp_confint[[i]][5,1], smp_confint[[i]][5,2])
+    #s_wd <- c(smp_confint[[i]][6,1], smp_confint[[i]][6,2])
+    
+    pct_tiv12[i] <- s_tiv12[1] <= tiv12 && tiv12 <= s_tiv12[2]
+    pct_rc[i] <- s_rc[1] <= rc && rc <= s_rc[2]
+    pct_rm[i] <- s_rm[1] <= rm && rm <= s_rm[2]
+    pct_sf[i] <- s_sf[1] <= sf && sf <= s_sf[2]
+    #pct_wd[i] <- s_wd[1] <= wd && wd <= s_wd[2]
+    
+  }
+  
+  pct1_tiv12 <- (sum(pct_tiv12==TRUE)/1000)*100
+  pct1_rc <- (sum(pct_rc==TRUE)/1000)*100
+  pct1_rm <- (sum(pct_rm==TRUE)/1000)*100
+  pct1_sf <- (sum(pct_sf==TRUE)/1000)*100
+  #pct1_wd <- sum(pct_wd==TRUE)/1000
+  
+  ans_vec <- c(pct1_tiv12, pct1_rc, pct1_rm, pct1_sf)
+  
+  return(ans_vec)
+}
+```
+```{r}
+sampler_lg <- function(dat, pct) {
+  ans_mat <- list()
+  
+  for(i in 1:1000) {
+    ans_mat[[i]] <- sample_n(dat, size=pct*36634)
+  }
+  return(ans_mat)
+}
+```
+```{r}
+
+fit <- lm(tiv_2011 ~ tiv_2012*construction, data=data)
+fit_coeff <- confint(fit)
+par(mfrow=c(2,2))
+plot(fit)
+
+lmtest::bptest(fit) # Breusch-Pagan test for heteroscedascity
+car::ncvTest(fit)
+
+set.seed(1234567890)
+
+new_data <- data[c("tiv_2011", "tiv_2012", "construction")]
+
+
+# 1%
+s_1_ <- sampler_lg(dat=new_data, pct=0.01)
+
+s_1_fit <- list()
+s_1_fit_coeffs <- list()
+s_1_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_1_fit[[i]] <- lm(s_1_[[i]]$tiv_2011 ~ s_1_[[i]]$tiv_2012 + s_1_[[i]]$construction, data=s_1_[[i]])
+   s_1_fit_confint[[i]] <- confint(s_1_fit[[i]], level=0.95)
+   s_1_fit_coeffs[[i]] <- s_1_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_1_fit_confint)
+
+
+# 2%
+s_2_ <- sampler_lg(dat=new_data, pct=0.02)
+
+s_2_fit <- list()
+s_2_fit_coeffs <- list()
+s_2_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_2_fit[[i]] <- lm(s_2_[[i]]$tiv_2011 ~ s_2_[[i]]$tiv_2012 + s_2_[[i]]$construction, data=s_2_[[i]])
+   s_2_fit_confint[[i]] <- confint(s_2_fit[[i]], level=0.95)
+   s_2_fit_coeffs[[i]] <- s_2_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_2_fit_confint)
+
+# 5%
+s_5_ <- sampler_lg(dat=new_data, pct=0.05)
+
+s_5_fit <- list()
+s_5_fit_coeffs <- list()
+s_5_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_5_fit[[i]] <- lm(s_5_[[i]]$tiv_2011 ~ s_5_[[i]]$tiv_2012 + s_5_[[i]]$construction, data=s_5_[[i]])
+   s_5_fit_confint[[i]] <- confint(s_5_fit[[i]], level=0.95)
+   s_5_fit_coeffs[[i]] <- s_5_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_5_fit_confint)
+
+# 7.5%
+s_75_ <- sampler_lg(dat=new_data, pct=0.075)
+
+s_75_fit <- list()
+s_75_fit_coeffs <- list()
+s_75_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_75_fit[[i]] <- lm(s_75_[[i]]$tiv_2011 ~ s_75_[[i]]$tiv_2012 + s_75_[[i]]$construction, data=s_75_[[i]])
+   s_75_fit_confint[[i]] <- confint(s_75_fit[[i]], level=0.95)
+   s_75_fit_coeffs[[i]] <- s_75_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_75_fit_confint)
+
+# 10%
+s_10_ <- sampler_lg(dat=new_data, pct=0.1)
+
+s_10_fit <- list()
+s_10_fit_coeffs <- list()
+s_10_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_10_fit[[i]] <- lm(s_10_[[i]]$tiv_2011 ~ s_10_[[i]]$tiv_2012 + s_10_[[i]]$construction, data=s_1_[[i]])
+   s_10_fit_confint[[i]] <- confint(s_1_fit[[i]], level=0.95)
+   s_10_fit_coeffs[[i]] <- s_10_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_10_fit_confint)
+
+# 15%
+s_15_ <- sampler_lg(dat=new_data, pct=0.15)
+
+s_15_fit <- list()
+s_15_fit_coeffs <- list()
+s_15_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_15_fit[[i]] <- lm(s_15_[[i]]$tiv_2011 ~ s_15_[[i]]$tiv_2012 + s_15_[[i]]$construction, data=s_15_[[i]])
+   s_15_fit_confint[[i]] <- confint(s_15_fit[[i]], level=0.95)
+   s_15_fit_coeffs[[i]] <- s_15_fit[[i]]$coefficients
+}
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_15_fit_confint)
+
+
+# 20%
+s_20_ <- sampler_lg(dat=new_data, pct=0.2)
+
+s_20_fit <- list()
+s_20_fit_coeffs <- list()
+s_20_fit_confint <- list()
+
+for(i in 1:1000) {
+   s_20_fit[[i]] <- lm(s_20_[[i]]$tiv_2011 ~ s_20_[[i]]$tiv_2012 + s_20_[[i]]$construction, data=s_20_[[i]])
+   s_20_fit_confint[[i]] <- confint(s_20_fit[[i]], level=0.95)
+   s_20_fit_coeffs[[i]] <- s_20_fit[[i]]$coefficients
+ }
+coeff_cmp(pop_coeff=fit_coeff, smp_confint=s_20_fit_confint)
+
+```
